@@ -181,14 +181,49 @@ def parse_hierarchy_json(data: Dict[str, Any]) -> List[Hierarchy]:
 
 
 def parse_hierarchy_map_json(data: Dict[str, Any]) -> List[Hierarchy]:
-    """Parse top-level mapping: {hier_path: {type:..., pins:[...]}}."""
-    result: List[Hierarchy] = []
-    for hname, item in data.items():
+    """Parse map input and expand hierarchy path to per-level modules.
+
+    Example input:
+      {"A/B/C/D/E": {"type":"AND", "pins":[...]}}
+
+    Output modules:
+      A instantiates B
+      B instantiates C
+      C instantiates D
+      D instantiates leaf cell instance E (type AND)
+    """
+    modules: "OrderedDict[str, Hierarchy]" = OrderedDict()
+    edge_order: List[Tuple[str, str]] = []
+    edge_seen: set[Tuple[str, str]] = set()
+    leaf_records: List[Tuple[str, str, str, "OrderedDict[str, str]"]] = []
+
+    def get_module(name: str) -> Hierarchy:
+        if name not in modules:
+            modules[name] = Hierarchy(name=name)
+        return modules[name]
+
+    def merge_ports(target: Hierarchy, ports: List[Port]) -> None:
+        existing = {p.name for p in target.ports}
+        for p in ports:
+            if p.name not in existing:
+                target.ports.append(Port(name=p.name, direction=p.direction, width=p.width))
+                existing.add(p.name)
+
+    def unique_instance_name(h: Hierarchy, preferred: str) -> str:
+        used = {inst.name for inst in h.instances}
+        if preferred not in used:
+            return preferred
+        n = 2
+        while f"{preferred}_{n}" in used:
+            n += 1
+        return f"{preferred}_{n}"
+
+    for hpath, item in data.items():
         if not isinstance(item, dict):
             continue
 
         # Skip known wrapper keys of other supported formats.
-        if hname in ("hierarchies", "records"):
+        if hpath in ("hierarchies", "records"):
             continue
 
         ctype = pick(item, ["type", "cell", "cell_type", "ref"])
@@ -196,28 +231,63 @@ def parse_hierarchy_map_json(data: Dict[str, Any]) -> List[Hierarchy]:
         if not ctype or not isinstance(raw_ports, list):
             continue
 
-        hierarchy = Hierarchy(name=str(hname))
-        inst = Instance(name="u_cell", cell_type=str(ctype))
+        segments = [seg for seg in str(hpath).split("/") if seg]
+        if not segments:
+            continue
 
+        ports: List[Port] = []
+        leaf_pin_map: "OrderedDict[str, str]" = OrderedDict()
         for p in raw_ports:
             if not isinstance(p, dict):
-                raise ValueError(f"Pin entry must be an object in hierarchy '{hname}': {p}")
+                raise ValueError(f"Pin entry must be an object in hierarchy '{hpath}': {p}")
             pname = pick(p, ["name", "pin", "port"])
             if not pname:
-                raise ValueError(f"Port missing name in hierarchy '{hname}': {p}")
+                raise ValueError(f"Port missing name in hierarchy '{hpath}': {p}")
 
+            pname = str(pname)
             direction = pick(p, ["direction", "dir"], default="input")
             width = pick(p, ["width", "bus", "range"], default=1)
-            hierarchy.ports.append(Port(str(pname), str(direction), width))
+            ports.append(Port(name=pname, direction=str(direction), width=width))
 
-            # If net is omitted, connect pin to the same-name module port.
-            net_name = pick(p, ["net", "signal", "wire"], default=str(pname))
-            inst.pins[str(pname)] = str(net_name)
+            # If net is omitted, connect pin to same-name module port.
+            net_name = pick(p, ["net", "signal", "wire"], default=pname)
+            leaf_pin_map[pname] = str(net_name)
 
-        hierarchy.instances.append(inst)
-        result.append(hierarchy)
+        chain_modules = segments[:-1] if len(segments) > 1 else [segments[0]]
+        for mod in chain_modules:
+            merge_ports(get_module(mod), ports)
 
-    return result
+        if len(segments) > 1:
+            for i in range(len(segments) - 2):
+                edge = (segments[i], segments[i + 1])
+                if edge not in edge_seen:
+                    edge_seen.add(edge)
+                    edge_order.append(edge)
+
+        leaf_parent = chain_modules[-1]
+        leaf_inst_name = segments[-1] if len(segments) > 1 else "u_cell"
+        leaf_records.append((leaf_parent, leaf_inst_name, str(ctype), leaf_pin_map))
+
+    # Add parent->child module instantiations.
+    for parent_name, child_name in edge_order:
+        parent = get_module(parent_name)
+        child = get_module(child_name)
+        pin_map: "OrderedDict[str, str]" = OrderedDict()
+        for p in child.ports:
+            pin_map[p.name] = p.name
+
+        inst_name = unique_instance_name(parent, f"u_{sanitize_identifier(child_name)}")
+        parent.instances.append(
+            Instance(name=inst_name, cell_type=child.name, pins=pin_map)
+        )
+
+    # Add leaf cell instantiations to last hierarchy level.
+    for parent_name, inst_name, ctype, pin_map in leaf_records:
+        parent = get_module(parent_name)
+        final_name = unique_instance_name(parent, sanitize_identifier(inst_name, "u_cell"))
+        parent.instances.append(Instance(name=final_name, cell_type=ctype, pins=pin_map))
+
+    return list(modules.values())
 
 
 def parse_flat_records(records: List[Dict[str, Any]]) -> List[Hierarchy]:
