@@ -1,0 +1,18 @@
+{
+  "A/B/C/D/E": {
+    "type": "AND",
+    "pins": [
+      {"name": "clk", "direction": "input", "width": 1},
+      {"name": "rst_n", "direction": "input", "width": 1},
+      {"name": "y", "direction": "output", "width": 1}
+    ]
+  },
+  "A/B/C/D/F": {
+    "type": "OR",
+    "pins": [
+      {"name": "a", "direction": "input", "width": 1},
+      {"name": "b", "direction": "input", "width": 1},
+      {"name": "z", "direction": "output", "width": 1}
+    ]
+  }
+}

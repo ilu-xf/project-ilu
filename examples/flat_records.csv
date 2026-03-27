@@ -1,0 +1,9 @@
+hierarchy,instance,cell_type,pin,net,module_pin,direction,width
+top,u_and,AND2X1,A,clk,false,,
+top,u_and,AND2X1,B,rst_n,false,,
+top,u_and,AND2X1,Y,n1,false,,
+top,u_buf,BUF1,A,n1,false,,
+top,u_buf,BUF1,Y,y,false,,
+top,,,,clk,true,input,1
+top,,,,rst_n,true,input,1
+top,,,,y,true,output,1
