@@ -1,0 +1,50 @@
+{
+  "hierarchies": [
+    {
+      "name": "top",
+      "pins": [
+        { "name": "clk", "direction": "input", "width": 1 },
+        { "name": "rst_n", "direction": "input", "width": 1 },
+        { "name": "y", "direction": "output", "width": 1 }
+      ],
+      "cells": [
+        {
+          "name": "u_and",
+          "type": "AND2X1",
+          "pins": {
+            "A": "clk",
+            "B": "rst_n",
+            "Y": "n1"
+          }
+        },
+        {
+          "name": "u_buf",
+          "type": "BUF1",
+          "pins": {
+            "A": "n1",
+            "Y": "y"
+          }
+        }
+      ]
+    },
+    {
+      "name": "child_block",
+      "pins": [
+        { "name": "a", "direction": "input", "width": 1 },
+        { "name": "b", "direction": "input", "width": 1 },
+        { "name": "z", "direction": "output", "width": 1 }
+      ],
+      "cells": [
+        {
+          "name": "u_or",
+          "type": "OR2X1",
+          "pins": {
+            "A": "a",
+            "B": "b",
+            "Y": "z"
+          }
+        }
+      ]
+    }
+  ]
+}
