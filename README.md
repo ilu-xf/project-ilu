@@ -8,6 +8,7 @@
 
 - 输入支持：
   - **hierarchy 结构 JSON**
+  - **hierarchy-map JSON（key 为层级路径）**
   - **扁平 records JSON**
   - **扁平 records CSV**
 - 输出：每个 hierarchy 一个 `.v` 文件
@@ -54,6 +55,27 @@
 - `net`
 
 若要描述 module 端口，可额外使用一行标记 `module_pin=true`，并带 `direction` / `width`。
+
+### 3) hierarchy-map JSON（你的结构）
+
+当输入是下面这种结构时也支持（key 是 hierarchy 路径）：
+
+```json
+{
+  "A/B/C/D/E": {
+    "type": "AND",
+    "pins": [
+      {"name": "clk", "direction": "input", "width": 1},
+      {"name": "rst_n", "direction": "input", "width": 1},
+      {"name": "y", "direction": "output", "width": 1}
+    ]
+  }
+}
+```
+
+该模式下会为每个 key 生成一个 module，且自动例化一个 `type` 对应的 cell：
+- 实例名默认：`u_<type>`
+- pin 连接默认按同名连接：`.clk(clk)`, `.rst_n(rst_n)`, `.y(y)`
 
 ## 使用方法
 

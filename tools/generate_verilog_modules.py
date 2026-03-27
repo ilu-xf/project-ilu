@@ -180,6 +180,46 @@ def parse_hierarchy_json(data: Dict[str, Any]) -> List[Hierarchy]:
     return result
 
 
+def parse_hierarchy_map_json(data: Dict[str, Any]) -> List[Hierarchy]:
+    """Parse top-level mapping: {hier_path: {type:..., pins:[...]}}."""
+    result: List[Hierarchy] = []
+    for hname, item in data.items():
+        if not isinstance(item, dict):
+            continue
+
+        # Skip known wrapper keys of other supported formats.
+        if hname in ("hierarchies", "records"):
+            continue
+
+        ctype = pick(item, ["type", "cell", "cell_type", "ref"])
+        raw_ports = pick(item, ["pins", "ports"], default=[])
+        if not ctype or not isinstance(raw_ports, list):
+            continue
+
+        hierarchy = Hierarchy(name=str(hname))
+        inst = Instance(name="u_cell", cell_type=str(ctype))
+
+        for p in raw_ports:
+            if not isinstance(p, dict):
+                raise ValueError(f"Pin entry must be an object in hierarchy '{hname}': {p}")
+            pname = pick(p, ["name", "pin", "port"])
+            if not pname:
+                raise ValueError(f"Port missing name in hierarchy '{hname}': {p}")
+
+            direction = pick(p, ["direction", "dir"], default="input")
+            width = pick(p, ["width", "bus", "range"], default=1)
+            hierarchy.ports.append(Port(str(pname), str(direction), width))
+
+            # If net is omitted, connect pin to the same-name module port.
+            net_name = pick(p, ["net", "signal", "wire"], default=str(pname))
+            inst.pins[str(pname)] = str(net_name)
+
+        hierarchy.instances.append(inst)
+        result.append(hierarchy)
+
+    return result
+
+
 def parse_flat_records(records: List[Dict[str, Any]]) -> List[Hierarchy]:
     hier_map: "OrderedDict[str, Hierarchy]" = OrderedDict()
     instance_map: Dict[Tuple[str, str], Instance] = {}
@@ -251,11 +291,17 @@ def load_input(path: Path) -> Tuple[List[Hierarchy], str]:
     if isinstance(data, dict) and isinstance(data.get("records"), list):
         return parse_flat_records(data["records"]), "flat(json.records)"
 
+    if isinstance(data, dict):
+        parsed = parse_hierarchy_map_json(data)
+        if parsed:
+            return parsed, "hierarchy_map(json.dict)"
+
     if isinstance(data, list):
         return parse_flat_records(data), "flat(json.list)"
 
     raise ValueError(
-        "Unsupported input JSON. Use either {'hierarchies': [...]}, {'records': [...]}, or a list."
+        "Unsupported input JSON. Use either {'hierarchies': [...]}, {'records': [...]}, "
+        "a hierarchy-map dict, or a list."
     )
 
 
